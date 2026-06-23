@@ -14,10 +14,10 @@ const states = ["idle", "thinking", "proud", "annoyed"];
 // ── VAD 参数 ──
 const VAD_POLL_MS = 120;
 const SPEECH_THRESHOLD = 0.022;
-const SILENCE_HOLD_MS = 1450;
+const SILENCE_HOLD_MS = 2300;
 const MAX_WAIT_FOR_SPEECH_MS = 7000;
-const MAX_RECORDING_MS = 18000;
-const MIN_SPEECH_MS = 500;
+const MAX_RECORDING_MS = 25000;
+const MIN_SPEECH_MS = 900;
 const DIALOGUE_LOCK_MS = 90000;
 
 // ── TurnManager 参数 ──
@@ -358,12 +358,14 @@ async function refreshCheckin() {
 // ── 发送消息 ──
 async function sendMessage(text, source = "text") {
   if (!window.companionDesktop?.chat) return;
+  const chatT0 = performance.now();
   clearAutoListenTimer();
   setState("thinking");
   statusLine.textContent = "sending";
   setDialogue("考えているわ。少し待ちなさい。", "我在思考，稍等。", { lockMs: 20000, live: true });
 
   const result = await window.companionDesktop.chat({ text, source });
+  console.log("[chat latency]", { chat_total_ms: Math.round(performance.now() - chatT0), text_len: text.length, ok: result.ok });
   if (!result.ok) {
     setState("annoyed");
     statusLine.textContent = result.reason || `request failed (${result.status || "?"})`;
@@ -438,6 +440,12 @@ async function stopRecording(mode = "finalize", allowRestart = true) {
   const recorder = mediaRecorder;
   recorder.__stopMode = mode;
   recorder.__allowRestart = allowRestart;
+  // ── 在 reset 前保存真实 timing ──
+  const now = Date.now();
+  recorder.__silenceMs = hasDetectedSpeech && lastVoiceAt ? now - lastVoiceAt : 0;
+  recorder.__speechMs = hasDetectedSpeech && speechStartedAt && lastVoiceAt
+    ? Math.max(0, lastVoiceAt - speechStartedAt)
+    : 0;
   await cleanupAudioMonitoring();
   resetRecordingFlags();
   statusLine.textContent = mode === "cancel" ? "idle" : "transcribing";
@@ -512,16 +520,25 @@ async function transcribeAudio(blob) {
 }
 
 // ── TurnManager: 核心改动 ──
-async function finishRecording(blob, allowRestart = true) {
+async function finishRecording(blob, allowRestart = true, silenceMs = 0, speechMs = 0) {
   statusLine.textContent = "transcribing";
   setState("thinking");
 
   try {
+    const t0 = performance.now();
     const result = await transcribeAudio(blob);
+    const t1 = performance.now();
     const text = (result.text || "").trim();
     petInput.value = text;
-    currentSilenceMs = Date.now() - lastVoiceAt;
-    currentSpeechMs = lastVoiceAt - speechStartedAt;
+    currentSilenceMs = silenceMs;
+    currentSpeechMs = speechMs;
+
+    console.log("[voice latency]", {
+      asr_ms: Math.round(t1 - t0),
+      text: text.slice(0, 50) || "(empty)",
+      silence_ms: currentSilenceMs,
+      speech_ms: currentSpeechMs,
+    });
 
     statusLine.textContent = `asr ${result.engine || "ready"}`;
     if (!text) {
@@ -532,7 +549,7 @@ async function finishRecording(blob, allowRestart = true) {
     }
 
     // ── 调用 TurnManager 决定是否回答 ──
-    const decision = await decideTurn(text, currentSilenceMs, currentSpeechMs, 0.8);
+    const decision = await decideTurn(text, currentSilenceMs, currentSpeechMs, result.confidence ?? 0.8);
 
     switch (decision.action) {
       case "interrupt":
@@ -565,6 +582,7 @@ async function finishRecording(blob, allowRestart = true) {
         // 用户说完了，结合 pendingTranscript 一起发送
         const fullText = pendingTranscript ? pendingTranscript + " " + text : text;
         pendingTranscript = "";
+        console.log("[voice latency]", { chat_send_ms: Math.round(performance.now() - t1) });
         await sendMessage(fullText, "voice");
         break;
     }
@@ -668,12 +686,14 @@ async function beginListening(trigger = "manual") {
     const recorder = mediaRecorder;
     const stopMode = recorder?.__stopMode || "finalize";
     const allowRestart = recorder?.__allowRestart !== false;
+    const silenceMs = recorder?.__silenceMs || 0;
+    const speechMs = recorder?.__speechMs || 0;
     const blob = new Blob(recordedChunks, { type: recorder?.mimeType || "audio/webm" });
     recordedChunks = [];
     stopMediaTracks();
     mediaRecorder = null;
     if (stopMode === "finalize") {
-      await finishRecording(blob, allowRestart);
+      await finishRecording(blob, allowRestart, silenceMs, speechMs);
     } else if (allowRestart) {
       scheduleAutoListen(750);
     }

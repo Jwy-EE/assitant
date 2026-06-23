@@ -269,7 +269,12 @@ async def asr_transcribe(audio: UploadFile = File(...)) -> dict[str, Any]:
     result = asr_service.transcribe_wav(audio_bytes, language="zh-CN")
     if not result.ok:
         raise HTTPException(status_code=502, detail=result.reason or "ASR failed.")
-    return {"text": result.text, "engine": result.engine}
+    return {
+        "text": result.text,
+        "engine": result.engine,
+        "confidence": result.confidence,
+        "duration_ms": result.duration_ms,
+    }
 
 
 @app.get("/api/voice/status")

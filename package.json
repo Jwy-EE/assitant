@@ -1,0 +1,16 @@
+﻿{
+  "name": "deepseek-desktop-research-companion-shell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron desktop shell for the Windows research companion.",
+  "main": "desktop/main.js",
+  "scripts": {
+    "desktop": "electron desktop/main.js",
+    "desktop:dev": "electron desktop/main.js --dev",
+    "check:desktop": "node --check desktop/main.js && node --check desktop/preload.js && node --check desktop/pet.js && node --check desktop/smoke-main.js",
+    "smoke:desktop": "electron desktop/smoke-main.js"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7"
+  }
+}

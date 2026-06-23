@@ -1,0 +1,353 @@
+﻿:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", "Yu Gothic UI", "Microsoft YaHei", sans-serif;
+  background: transparent;
+  color: #edf4e8;
+  --panel: rgba(10, 14, 12, 0.82);
+  --panel-strong: rgba(20, 27, 22, 0.92);
+  --line: rgba(155, 178, 159, 0.45);
+  --accent: #d6e3ca;
+  --accent-ink: #172015;
+  --muted: #c7d3c5;
+  --active: #b8d6a3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  padding: 12px;
+}
+
+.pet {
+  width: 100%;
+  height: 100%;
+}
+
+.pet-shell {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto auto auto auto;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(177, 196, 175, 0.24);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(20, 29, 24, 0.9), rgba(10, 14, 12, 0.96)),
+    radial-gradient(circle at top, rgba(215, 226, 205, 0.12), transparent 45%);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+  -webkit-app-region: drag;
+}
+
+.character-wrap,
+.dialogue,
+.composer,
+.composer-actions,
+.status-row,
+.topbar,
+textarea,
+button {
+  -webkit-app-region: no-drag;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.drag-hint {
+  color: rgba(224, 235, 217, 0.78);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.character-wrap {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.character {
+  position: relative;
+  width: 210px;
+  height: 270px;
+  filter: drop-shadow(0 18px 26px rgba(0, 0, 0, 0.38));
+  animation: float-idle 4.8s ease-in-out infinite;
+}
+
+.hair {
+  position: absolute;
+  left: 39px;
+  top: 7px;
+  width: 132px;
+  height: 150px;
+  background:
+    radial-gradient(circle at 44% 2%, #e9f0df 0 14px, transparent 15px),
+    linear-gradient(145deg, #64543f, #2d2825 72%);
+  border-radius: 48% 48% 42% 42%;
+  transform: rotate(-2deg);
+}
+
+.hair::before,
+.hair::after {
+  content: "";
+  position: absolute;
+  top: 30px;
+  width: 46px;
+  height: 120px;
+  background: linear-gradient(170deg, #514435, #24211f);
+  border-radius: 55% 45% 50% 50%;
+}
+
+.hair::before {
+  left: -20px;
+  transform: rotate(12deg);
+}
+
+.hair::after {
+  right: -18px;
+  transform: rotate(-10deg);
+}
+
+.head {
+  position: absolute;
+  left: 50px;
+  top: 42px;
+  width: 110px;
+  height: 128px;
+  background: #ddc3a8;
+  border: 2px solid rgba(60, 47, 42, 0.58);
+  border-radius: 48% 48% 44% 44%;
+  transition: transform 180ms ease;
+}
+
+.eye {
+  position: absolute;
+  top: 51px;
+  width: 19px;
+  height: 13px;
+  background: #332b24;
+  border-radius: 50%;
+  transition: transform 160ms ease;
+}
+
+.eye::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  top: 2px;
+  width: 5px;
+  height: 5px;
+  background: #f7f4e9;
+  border-radius: 50%;
+}
+
+.eye.left {
+  left: 25px;
+}
+
+.eye.right {
+  right: 25px;
+}
+
+.mouth {
+  position: absolute;
+  left: 45px;
+  top: 82px;
+  width: 20px;
+  height: 7px;
+  border-bottom: 3px solid #5b302f;
+  border-radius: 0 0 50% 50%;
+}
+
+.body {
+  position: absolute;
+  left: 43px;
+  top: 158px;
+  width: 124px;
+  height: 100px;
+  background:
+    linear-gradient(90deg, transparent 0 36%, rgba(231, 236, 219, 0.96) 37% 63%, transparent 64%),
+    linear-gradient(145deg, #252d2a, #111513);
+  border: 2px solid rgba(101, 119, 104, 0.72);
+  border-radius: 34px 34px 18px 18px;
+}
+
+.dialogue,
+.composer,
+.status-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.dialogue {
+  padding: 10px 12px;
+  min-height: 110px;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.dialogue.live {
+  border-color: rgba(184, 214, 163, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(184, 214, 163, 0.12);
+}
+
+.dialogue p {
+  margin: 0;
+}
+
+#jaLine {
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
+}
+
+#zhLine {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 38px;
+}
+
+.composer {
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+textarea {
+  width: 100%;
+  resize: none;
+  border: 1px solid rgba(146, 170, 149, 0.36);
+  border-radius: 8px;
+  background: rgba(8, 11, 10, 0.9);
+  color: #eff6ea;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+textarea:focus {
+  outline: 1px solid rgba(214, 227, 202, 0.45);
+}
+
+.composer-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+button {
+  border: 1px solid rgba(159, 179, 160, 0.42);
+  border-radius: 8px;
+  min-height: 40px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.icon-button {
+  min-width: 76px;
+  padding: 0 12px;
+  background: rgba(12, 17, 14, 0.95);
+  color: #ecf3e8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.icon-button.active {
+  background: var(--active);
+  color: #122010;
+  border-color: rgba(198, 226, 177, 0.66);
+}
+
+.send-button {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.status-row {
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status {
+  color: #d7e2d3;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag {
+  color: #111712;
+  background: #dbe7d4;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.pet.thinking .character {
+  animation-duration: 2.2s;
+}
+
+.pet.speaking .mouth {
+  animation: speak 220ms ease-in-out infinite;
+}
+
+.pet.proud .head {
+  transform: rotate(-4deg) translateY(-2px);
+}
+
+.pet.annoyed .eye {
+  transform: scaleY(0.58);
+}
+
+@keyframes float-idle {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(8px);
+  }
+}
+
+@keyframes speak {
+  0%,
+  100% {
+    height: 7px;
+    transform: scaleY(1);
+  }
+  50% {
+    height: 13px;
+    transform: scaleY(1.5);
+  }
+}

@@ -1,0 +1,49 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Research Companion Pet</title>
+    <link rel="stylesheet" href="./pet.css" />
+  </head>
+  <body>
+    <main id="pet" class="pet idle">
+      <section class="pet-shell">
+        <header class="topbar">
+          <span class="drag-hint">Desktop Companion</span>
+          <button id="micButton" class="icon-button active" type="button" title="Toggle auto listen">AUTO</button>
+        </header>
+
+        <button id="openWorkbench" class="character-wrap" type="button" title="Open workbench">
+          <section class="character" aria-label="desktop pet">
+            <div class="hair"></div>
+            <div class="head">
+              <div class="eye left"></div>
+              <div class="eye right"></div>
+              <div class="mouth"></div>
+            </div>
+            <div class="body"></div>
+          </section>
+        </button>
+
+        <section id="dialogueBox" class="dialogue">
+          <p id="jaLine">起動したわ。</p>
+          <p id="zhLine">已启动。你可以直接在这里和我说话。</p>
+        </section>
+
+        <form id="petComposer" class="composer">
+          <textarea id="petInput" rows="3" placeholder="用中文输入，或直接开始说话"></textarea>
+          <div class="composer-actions">
+            <button id="sendButton" class="send-button" type="submit">Send</button>
+          </div>
+        </form>
+
+        <div class="status-row">
+          <span id="status" class="status">checking backend</span>
+          <span id="modeTag" class="tag">idle</span>
+        </div>
+      </section>
+    </main>
+    <script src="./pet.js"></script>
+  </body>
+</html>

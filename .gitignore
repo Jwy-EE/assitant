@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+data/secrets*
+logs/
+*.log
+.env
+
+node_modules/
+dist/
+out/

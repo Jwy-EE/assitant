@@ -1,0 +1,103 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Research Companion</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="avatar-panel" aria-label="avatar panel">
+        <div class="avatar" id="avatar">
+          <div class="face">
+            <div class="eye left"></div>
+            <div class="eye right"></div>
+            <div class="mouth" id="mouth"></div>
+          </div>
+        </div>
+        <div class="status">
+          <span id="emotion">teasing_neutral</span>
+          <span id="workMode">idle</span>
+        </div>
+      </section>
+
+      <section class="workbench">
+        <header>
+          <h1>研究搭档</h1>
+          <div class="header-actions">
+            <button id="refreshButton" type="button" title="刷新状态">Refresh</button>
+            <button id="micButton" type="button" title="语音输入">Mic</button>
+          </div>
+        </header>
+
+        <section class="subtitle">
+          <p class="ja" id="jaText">起動したわ。DeepSeek key を設定してから話しかけなさい。</p>
+          <p class="zh" id="zhText">启动了。设置 DeepSeek key 后再和我说话。</p>
+        </section>
+
+        <form id="chatForm" class="composer">
+          <textarea id="userText" rows="3" placeholder="用中文输入，或点 Mic 说话"></textarea>
+          <button type="submit">发送</button>
+        </form>
+
+        <section class="grid-two">
+          <section class="panel settings">
+            <h2>设置</h2>
+            <div class="row">
+              <input id="apiKey" type="password" placeholder="DeepSeek API key" autocomplete="off" />
+              <button id="saveKey" type="button">保存</button>
+            </div>
+            <p id="health"></p>
+          </section>
+
+          <section class="panel command-checker">
+            <h2>命令风险检查</h2>
+            <div class="row">
+              <input id="commandText" type="text" placeholder="例如: Remove-Item C:\\tmp\\file.txt" />
+              <button id="inspectCommand" type="button">检查</button>
+            </div>
+            <pre id="commandResult">{}</pre>
+          </section>
+
+          <section class="panel divergence-panel">
+            <h2>Divergence</h2>
+            <div class="row">
+              <button id="loadDivergence" type="button">读取</button>
+              <button id="loadDivergenceNews" type="button">新闻</button>
+            </div>
+            <pre id="divergenceResult">等待读取。</pre>
+          </section>
+        </section>
+
+        <section class="grid-two">
+          <section class="panel research">
+            <h2>论文搜索</h2>
+            <form id="researchForm" class="row">
+              <input id="researchQuery" type="text" placeholder="frequency guided time series model" />
+              <button type="submit">搜索</button>
+            </form>
+            <div id="paperList" class="list"></div>
+          </section>
+
+          <section class="panel memories">
+            <h2>长期记忆</h2>
+            <form id="memoryForm" class="memory-form">
+              <input id="memoryKind" type="text" value="user_preference" />
+              <textarea id="memoryContent" rows="2" placeholder="写入一条明确的长期记忆"></textarea>
+              <button type="submit">写入</button>
+            </form>
+            <div id="memoryList" class="list"></div>
+          </section>
+        </section>
+
+        <section class="panel task">
+          <h2>工具意图与权限</h2>
+          <pre id="toolBox">{}</pre>
+        </section>
+      </section>
+    </main>
+    <script src="/static/main.js"></script>
+  </body>
+</html>
+

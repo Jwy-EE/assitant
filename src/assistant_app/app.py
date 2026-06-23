@@ -17,6 +17,7 @@ from .secret_store import SecretStore, SecretStoreError
 from .settings import ROOT_DIR, STATIC_DIR, settings
 from .soul import SoulEngine, SoulState, system_persona_prompt
 from .tools.divergence import DivergenceMeter
+from .turn import TurnDecision, calc_endscore
 from .tools.permissions import PermissionBroker
 from .tools.research import ResearchSearch
 from .voice import VoiceService
@@ -75,6 +76,15 @@ class MemoryCreateRequest(BaseModel):
 class ResearchSearchRequest(BaseModel):
     query: str = Field(min_length=1)
     max_results: int = Field(default=8, ge=1, le=25)
+
+
+class TurnDecideRequest(BaseModel):
+    transcript: str = Field(default="")
+    silence_ms: int = Field(default=0, ge=0)
+    speech_ms: int = Field(default=0, ge=0)
+    asr_confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+    state: str = Field(default="LISTENING")
+    ai_speaking: bool = Field(default=False)
 
 
 class CommandInspectRequest(BaseModel):
@@ -230,6 +240,23 @@ async def proactive_checkin() -> dict[str, Any]:
         "voice_style": voice_style,
         "idle_minutes": idle_minutes,
         "soul_state": state.to_dict(),
+    }
+
+
+@app.post("/api/turn/decide")
+async def turn_decide(request: TurnDecideRequest) -> dict[str, Any]:
+    decision = calc_endscore(
+        transcript=request.transcript,
+        silence_ms=request.silence_ms,
+        speech_ms=request.speech_ms,
+        asr_confidence=request.asr_confidence,
+        ai_speaking=request.ai_speaking,
+    )
+    return {
+        "action": decision.action,
+        "confidence": decision.confidence,
+        "reason": decision.reason,
+        "backchannel": decision.backchannel,
     }
 
 

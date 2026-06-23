@@ -1,4 +1,4 @@
-﻿const pet = document.getElementById("pet");
+const pet = document.getElementById("pet");
 const dialogueBox = document.getElementById("dialogueBox");
 const statusLine = document.getElementById("status");
 const modeTag = document.getElementById("modeTag");
@@ -10,6 +10,8 @@ const micButton = document.getElementById("micButton");
 const openWorkbench = document.getElementById("openWorkbench");
 
 const states = ["idle", "thinking", "proud", "annoyed"];
+
+// ── VAD 参数 ──
 const VAD_POLL_MS = 120;
 const SPEECH_THRESHOLD = 0.022;
 const SILENCE_HOLD_MS = 1450;
@@ -18,6 +20,12 @@ const MAX_RECORDING_MS = 18000;
 const MIN_SPEECH_MS = 500;
 const DIALOGUE_LOCK_MS = 90000;
 
+// ── TurnManager 参数 ──
+// AI 说话时仍保持低功耗监听，用于打断检测
+const INTERRUPT_VAD_MS = 300;
+const INTERRUPT_SPEECH_MS = 800; // 用户说超过 800ms 视为打断意图
+
+// ── 状态变量 ──
 let stateIndex = 0;
 let lastCheckinAt = 0;
 let mediaRecorder = null;
@@ -41,6 +49,16 @@ let dialogueLockUntil = 0;
 let lastConversationAt = 0;
 let initializedPrompt = false;
 
+// TurnManager 状态
+let pendingTranscript = "";       // 等待中的部分识别文本
+let currentSilenceMs = 0;        // 当前静音时长
+let currentSpeechMs = 0;         // 当前说话时长
+
+// TTS 队列（sentence-level playback）
+let ttsQueue = [];
+let isPlayingTTS = false;
+
+// ── 辅助函数 ──
 function setState(nextState) {
   pet.classList.remove("idle", "thinking", "speaking", "proud", "annoyed");
   pet.classList.add(nextState);
@@ -127,21 +145,54 @@ function finishSpeech() {
   scheduleAutoListen(650);
 }
 
-function stopCurrentAudio() {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.src = "";
-    currentAudio = null;
+// ── TTS 队列管理（sentence-level playback）──
+function enqueueTTS(jaText, zhText, audioUrl) {
+  ttsQueue.push({ jaText, zhText, audioUrl });
+  if (!isPlayingTTS) {
+    playNextTTS();
   }
 }
 
+function clearTTSQueue() {
+  ttsQueue.length = 0;
+  isPlayingTTS = false;
+}
+
+function playNextTTS() {
+  if (ttsQueue.length === 0) {
+    isPlayingTTS = false;
+    return;
+  }
+  isPlayingTTS = true;
+  const item = ttsQueue.shift();
+  speakOneSentence(item.jaText, item.zhText, item.audioUrl);
+}
+
+// ── 打断检测：从 speakJapanese 独立出来 ──
+function stopCurrentAudio() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+  clearTTSQueue();
+}
+
 function speakJapanese(jaText, zhText, audioUrl = null) {
+  // 如果正在录音，先停止
   if (isRecording) {
     void stopRecording("cancel", false);
   }
   clearAutoListenTimer();
   stopCurrentAudio();
   clearSubtitleTimer();
+
+  // 单句播放入队列
+  enqueueTTS(jaText, zhText, audioUrl);
+}
+
+function speakOneSentence(jaText, zhText, audioUrl) {
+  if (isRecording) return;
   isSpeaking = true;
   setState("speaking");
 
@@ -161,19 +212,29 @@ function speakJapanese(jaText, zhText, audioUrl = null) {
     audio.onended = () => {
       currentAudio = null;
       zhLine.textContent = zhText;
-      finishSpeech();
+      // 播完当前句，继续下一句
+      if (ttsQueue.length > 0) {
+        playNextTTS();
+      } else {
+        finishSpeech();
+        // 播放结束后开启打断监听（低功耗）
+        scheduleAutoListen(500);
+      }
     };
     audio.onerror = () => {
       currentAudio = null;
-      speakJapanese(jaText, zhText, null);
+      finishSpeech();
+      scheduleAutoListen(800);
     };
     audio.play().catch(() => {
       currentAudio = null;
-      speakJapanese(jaText, zhText, null);
+      finishSpeech();
+      scheduleAutoListen(800);
     });
     return;
   }
 
+  // 无 audioUrl：浏览器 TTS fallback
   if (!("speechSynthesis" in window)) {
     setDialogue(jaText, zhText, { live: false });
     finishSpeech();
@@ -190,15 +251,57 @@ function speakJapanese(jaText, zhText, audioUrl = null) {
   };
   utterance.onend = () => {
     zhLine.textContent = zhText;
-    finishSpeech();
+    if (ttsQueue.length > 0) {
+      playNextTTS();
+    } else {
+      finishSpeech();
+      scheduleAutoListen(500);
+    }
   };
   utterance.onerror = () => {
     zhLine.textContent = zhText;
     finishSpeech();
+    scheduleAutoListen(800);
   };
   window.speechSynthesis.speak(utterance);
 }
 
+// ── 中断 AI 说话（用户打断） ──
+function interruptAISpeaking(reason = "user_interrupt") {
+  if (!isSpeaking) return;
+  stopCurrentAudio();
+  isSpeaking = false;
+  setState("idle");
+  setDialogue("止まったわ。続けて言いなさい。", "我停下了，你继续说吧。", { lockMs: 12000 });
+  // 立即重新开始监听
+  scheduleAutoListen(300);
+}
+
+// ── TurnManager: 决定是否回答 ──
+async function decideTurn(text, silenceMs, speechMs, asrConfidence) {
+  try {
+    const response = await fetch("/api/turn/decide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript: text,
+        silence_ms: silenceMs,
+        speech_ms: speechMs,
+        asr_confidence: asrConfidence,
+        state: isSpeaking ? "AI_SPEAKING" : "LISTENING",
+        ai_speaking: isSpeaking,
+      }),
+    });
+    if (!response.ok) throw new Error(`turn decide status ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.error("turn decide failed:", error);
+    // 如果后端挂了，默认回答
+    return { action: "answer_now", confidence: 0.5, reason: "fallback after turn error" };
+  }
+}
+
+// ── 健康检查 ──
 async function refreshHealth() {
   if (!window.companionDesktop) {
     statusLine.textContent = "desktop bridge missing";
@@ -252,6 +355,7 @@ async function refreshCheckin() {
   setState(states.includes(nextState) ? nextState : "thinking");
 }
 
+// ── 发送消息 ──
 async function sendMessage(text, source = "text") {
   if (!window.companionDesktop?.chat) return;
   clearAutoListenTimer();
@@ -271,9 +375,13 @@ async function sendMessage(text, source = "text") {
   const data = result.data;
   statusLine.textContent = `${data.emotion} / ${data.voice?.engine || "browser"}`;
   setState(data.emotion === "focused" ? "thinking" : data.emotion);
+
+  // 一次性播放完整音频（当前还是一次合成）
+  // 后续 Phase 4 会改成 sentence-level streaming
   speakJapanese(data.ja_text, data.zh_subtitle, data.audio_url || null);
 }
 
+// ── 音频处理 ──
 function stopMediaTracks() {
   if (!mediaStream) return;
   for (const track of mediaStream.getTracks()) {
@@ -403,31 +511,74 @@ async function transcribeAudio(blob) {
   return data;
 }
 
+// ── TurnManager: 核心改动 ──
 async function finishRecording(blob, allowRestart = true) {
   statusLine.textContent = "transcribing";
-  setDialogue("……聞き取りを整理しているわ。", "我判断你这句话结束了，正在转写。", { lockMs: 20000, live: true });
   setState("thinking");
 
   try {
     const result = await transcribeAudio(blob);
     const text = (result.text || "").trim();
     petInput.value = text;
+    currentSilenceMs = Date.now() - lastVoiceAt;
+    currentSpeechMs = lastVoiceAt - speechStartedAt;
+
     statusLine.textContent = `asr ${result.engine || "ready"}`;
     if (!text) {
-      setDialogue("うまく拾えなかったわ。", "这句我没有听清。再自然说一次。", { lockMs: 18000 });
+      setDialogue("うまく拾えなかったわ。", "这句我没有听清。再自然说一次。", { lockMs: 8000 });
       setState("annoyed");
-      if (allowRestart) scheduleAutoListen(800);
+      if (allowRestart) scheduleAutoListen(1200);
       return;
     }
-    await sendMessage(text, "voice");
+
+    // ── 调用 TurnManager 决定是否回答 ──
+    const decision = await decideTurn(text, currentSilenceMs, currentSpeechMs, 0.8);
+
+    switch (decision.action) {
+      case "interrupt":
+        // 打断 AI
+        if (isSpeaking) {
+          interruptAISpeaking("turn_interrupt");
+        }
+        pendingTranscript = text;
+        if (allowRestart) scheduleAutoListen(600);
+        break;
+
+      case "wait_more":
+        // 用户还没说完，追加识别文本，继续听
+        pendingTranscript = pendingTranscript ? pendingTranscript + " " + text : text;
+        setDialogue("まだ続くんでしょ？聞いてるわ。", `你继续说，我听着。已有: "${pendingTranscript.slice(-30)}"`, {
+          lockMs: 10000,
+          live: true,
+        });
+        if (allowRestart) scheduleAutoListen(500);
+        break;
+
+      case "backchannel":
+        // 用户只是附和，不回答
+        setDialogue("うん。", "嗯。", { lockMs: 4000 });
+        if (allowRestart) scheduleAutoListen(600);
+        break;
+
+      case "answer_now":
+      default:
+        // 用户说完了，结合 pendingTranscript 一起发送
+        const fullText = pendingTranscript ? pendingTranscript + " " + text : text;
+        pendingTranscript = "";
+        await sendMessage(fullText, "voice");
+        break;
+    }
   } catch (error) {
     statusLine.textContent = "asr failed";
-    setDialogue("音声経路に問題があるわ。", `语音转写失败：${error?.message || "unknown"}。先用文字输入。`, { lockMs: 22000 });
+    setDialogue("音声経路に問題があるわ。", `语音转写失败：${error?.message || "unknown"}。先用文字输入。`, {
+      lockMs: 22000,
+    });
     setState("annoyed");
     if (allowRestart) scheduleAutoListen(1400);
   }
 }
 
+// ── VAD 监听 ──
 function startVoiceMonitor() {
   vadInterval = setInterval(() => {
     if (!isRecording) return;
@@ -438,7 +589,7 @@ function startVoiceMonitor() {
       if (!hasDetectedSpeech) {
         hasDetectedSpeech = true;
         speechStartedAt = now;
-        setDialogue("話し続けなさい。", "我在听。你停下来时我会自己回答。", { lockMs: 15000, live: true });
+        setDialogue("話し続けなさい。", "我在听。", { lockMs: 15000, live: true });
       }
       lastVoiceAt = now;
       statusLine.textContent = `listening ${level.toFixed(3)}`;
@@ -466,6 +617,7 @@ function startVoiceMonitor() {
   }, VAD_POLL_MS);
 }
 
+// ── 开始录音 ──
 async function beginListening(trigger = "manual") {
   if (isRecording || isSpeaking || !autoListenEnabled) return;
 
@@ -539,6 +691,7 @@ async function beginListening(trigger = "manual") {
   startVoiceMonitor();
 }
 
+// ── 切换自动监听 ──
 async function toggleAutoListen() {
   autoListenEnabled = !autoListenEnabled;
   setMicVisual();
@@ -557,11 +710,13 @@ async function toggleAutoListen() {
   scheduleAutoListen(500);
 }
 
+// ── 事件绑定 ──
 composer.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = petInput.value.trim();
   if (!text) return;
   petInput.value = "";
+  pendingTranscript = ""; // 清空等待文本
   sendMessage(text);
 });
 

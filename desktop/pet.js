@@ -33,6 +33,7 @@ let mediaStream = null;
 let recordedChunks = [];
 let isRecording = false;
 let isSpeaking = false;
+let isChatting = false;          // 防止重复发送
 let audioContext = null;
 let analyserNode = null;
 let sourceNode = null;
@@ -358,29 +359,46 @@ async function refreshCheckin() {
 // ── 发送消息 ──
 async function sendMessage(text, source = "text") {
   if (!window.companionDesktop?.chat) return;
+  if (isChatting) return; // 防止重复发送
+  isChatting = true;
   const chatT0 = performance.now();
   clearAutoListenTimer();
   setState("thinking");
   statusLine.textContent = "sending";
   setDialogue("考えているわ。少し待ちなさい。", "我在思考，稍等。", { lockMs: 20000, live: true });
 
-  const result = await window.companionDesktop.chat({ text, source });
-  console.log("[chat latency]", { chat_total_ms: Math.round(performance.now() - chatT0), text_len: text.length, ok: result.ok });
-  if (!result.ok) {
-    setState("annoyed");
-    statusLine.textContent = result.reason || `request failed (${result.status || "?"})`;
-    setDialogue("設定か通信に問題があるわ。", result.data?.detail || "设置或通信出了问题。", { lockMs: 25000 });
-    scheduleAutoListen(1200);
-    return;
+  try {
+    const result = await window.companionDesktop.chat({ text, source });
+    console.log("[chat latency]", { chat_total_ms: Math.round(performance.now() - chatT0), text_len: text.length, ok: result.ok });
+
+    if (!result.ok) {
+      setState("annoyed");
+      statusLine.textContent = result.reason || `request failed (${result.status || "?"})`;
+      setDialogue("設定か通信に問題があるわ。", result.data?.detail || "设置或通信出了问题。", { lockMs: 25000 });
+      scheduleAutoListen(1200);
+      return;
+    }
+
+    const data = result.data;
+    statusLine.textContent = `${data.emotion} / ${data.voice?.engine || "browser"}`;
+    setState(data.emotion === "focused" ? "thinking" : data.emotion);
+
+    // 先显示字幕，不等 TTS
+    setDialogue(data.ja_text, data.zh_subtitle, { lockMs: 45000 });
+    console.log("[chat timing]", { subtitle_shown_ms: Math.round(performance.now() - chatT0) });
+
+    // TTS 播放：如果后端返回了 audio_url 就用，否则浏览器 TTS 兜底
+    const audioUrl = data.audio_url || null;
+    if (audioUrl) {
+      // 后端提供的完整音频
+      speakJapanese(data.ja_text, data.zh_subtitle, audioUrl);
+    } else {
+      // TTS 失败或没返回，用浏览器 SSML 兜底
+      speakJapanese(data.ja_text, data.zh_subtitle, null);
+    }
+  } finally {
+    isChatting = false;
   }
-
-  const data = result.data;
-  statusLine.textContent = `${data.emotion} / ${data.voice?.engine || "browser"}`;
-  setState(data.emotion === "focused" ? "thinking" : data.emotion);
-
-  // 一次性播放完整音频（当前还是一次合成）
-  // 后续 Phase 4 会改成 sentence-level streaming
-  speakJapanese(data.ja_text, data.zh_subtitle, data.audio_url || null);
 }
 
 // ── 音频处理 ──

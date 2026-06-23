@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -284,6 +285,7 @@ async def voice_status() -> dict[str, Any]:
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
+    t0 = time.perf_counter()
     api_key = secret_store.get_deepseek_key()
     if not api_key:
         raise HTTPException(
@@ -291,13 +293,16 @@ async def chat(request: ChatRequest) -> ChatResponse:
             detail="DeepSeek API key is missing. Set it in the settings panel or DEEPSEEK_API_KEY.",
         )
 
+    # Phase 1: memory + soul (低耗时)
     remembered_rows = memory_store.search(request.text, limit=8)
     remembered = [row["content"] for row in remembered_rows]
     state = SoulState.from_dict(memory_store.get_state("soul", SoulState().to_dict()))
     state = soul_engine.update(state, request.text)
     system_prompt = system_persona_prompt(state, remembered)
+    t1 = time.perf_counter()
 
-    client = DeepSeekClient(api_key=api_key)
+    # Phase 2: DeepSeek API (高耗时)
+    client = DeepSeekClient(api_key=api_key, timeout=30.0)
     try:
         result = await client.chat_json(
             system_prompt=system_prompt,
@@ -306,6 +311,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"DeepSeek request failed: {exc}") from exc
+    t2 = time.perf_counter()
 
     parsed = _normalize_reply(result.parsed)
     state.emotion = parsed["emotion"]
@@ -333,7 +339,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
             )
 
     permission = permission_broker.inspect_tool_intent(parsed["tool_intent"]["risk"])
-    voice_result = await voice_service.synthesize(parsed["ja_text"], parsed["voice_style"])
+    t3 = time.perf_counter()
+
+    # Phase 3: TTS 合成 + VTube (后置，不阻塞文字返回)
+    # 先合成 VTube（几乎瞬时），TTS 异步进行
     vtube_status = await vtube_client.emit(
         VTubeEvent(
             emotion=parsed["emotion"],
@@ -341,6 +350,16 @@ async def chat(request: ChatRequest) -> ChatResponse:
             voice_style=parsed["voice_style"],
         )
     )
+    t4 = time.perf_counter()
+
+    # TTS: 出错不阻塞对话，前端兜底用浏览器 TTS
+    try:
+        voice_result = await voice_service.synthesize(parsed["ja_text"], parsed["voice_style"])
+    except Exception:
+        voice_result = None
+    t5 = time.perf_counter()
+
+    _log_chat_timing(t0, t1, t2, t3, t4, t5, request.text)
 
     return ChatResponse(
         ja_text=parsed["ja_text"],
@@ -352,8 +371,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
         permission=permission.__dict__,
         soul_state=state.to_dict(),
         vtube=vtube_status,
-        audio_url=voice_result.audio_url,
-        voice=voice_result.__dict__,
+        audio_url=voice_result.audio_url if voice_result else None,
+        voice=voice_result.__dict__ if voice_result else {"engine": "browser", "reason": "TTS fallback"},
     )
 
 
@@ -371,6 +390,19 @@ def _normalize_reply(data: dict[str, Any]) -> dict[str, Any]:
             "description": str(tool_intent.get("description") or ""),
         },
     }
+
+
+def _log_chat_timing(t0: float, t1: float, t2: float, t3: float, t4: float, t5: float, text: str) -> None:
+    print(
+        f"[chat timing] "
+        f"memory_soul={int((t1-t0)*1000)}ms "
+        f"deepseek={int((t2-t1)*1000)}ms "
+        f"postproc={int((t3-t2)*1000)}ms "
+        f"vtube={int((t4-t3)*1000)}ms "
+        f"tts={int((t5-t4)*1000)}ms "
+        f"total={int((t5-t0)*1000)}ms "
+        f"text='{text[:30]}...' len={len(text)}"
+    )
 
 
 def main() -> None:

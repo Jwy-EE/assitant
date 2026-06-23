@@ -29,7 +29,6 @@ ANSWER_NOW_MARKERS: set[str] = {
     "给我建议", "有什么建议",
     "我说完了", "就这样",
     "开始吧", "你来说吧",
-    "吧",       # "吧" 结尾通常是请求
 }
 
 # ── 强打断标记 ──
@@ -146,7 +145,7 @@ def calc_endscore(
             )
 
     # 句尾是"吗/呢/?" → 疑问句，该回答
-    if any(text.rstrip().endswith(c) for c in ("吗", "呢", "？", "?", "吧")):
+    if any(text.rstrip().endswith(c) for c in ("吗", "呢", "？", "?")):
         return TurnDecision(
             action="answer_now",
             confidence=0.85,

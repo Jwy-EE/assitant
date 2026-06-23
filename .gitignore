@@ -26,4 +26,4 @@ Thumbs.db
 
 # Temp
 lightnovel_temp/
-scripts/test_*.py
+scripts/test_*.pydata/*.log  

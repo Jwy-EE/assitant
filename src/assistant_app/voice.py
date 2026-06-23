@@ -84,8 +84,13 @@ class VoiceService:
     async def _synthesize_edge(self, text: str, voice_style: str) -> VoiceResult:
         """Use Microsoft Edge TTS (edge-tts library) for natural Japanese speech.
 
+        IMPORTANT: Only the pure `text` (ja_text) is sent to the TTS engine.
+        NO SSML/XML wrapping is done here - the edge-tts library handles internal
+        SSML wrapping automatically. Passing SSML as the text would cause the
+        engine to read out XML tags as speech.
+
         Voice: ja-JP-NanamiNeural - mature, calm female Japanese voice.
-        SSML tuning: slightly slower rate + lower pitch = cool/calm/assertive style.
+        Pitch/rate: slightly slower rate + lower pitch = cool/calm/assertive style.
         """
         try:
             import edge_tts
@@ -99,19 +104,13 @@ class VoiceService:
         style_rate = style_cfg["rate"]
 
         voice = os.environ.get("ASSISTANT_TTS_VOICE", "ja-JP-NanamiNeural")
-        escaped = _escape_xml(text)
 
-        ssml = (
-            '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="ja-JP">'
-            f'<voice name="{voice}">'
-            f'<prosody pitch="{style_pitch}" rate="{style_rate}">'
-            f"{escaped}"
-            "</prosody>"
-            "</voice>"
-            "</speak>"
+        communicate = edge_tts.Communicate(
+            text,
+            voice,
+            rate=style_rate,
+            pitch=style_pitch,
         )
-
-        communicate = edge_tts.Communicate(ssml, voice, rate=style_rate, pitch=style_pitch)
         audio_bytes = b""
         try:
             async for chunk in communicate.stream():

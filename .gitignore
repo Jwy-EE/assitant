@@ -1,15 +1,29 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-.pytest_cache/
-data/*.db
-data/*.sqlite
-data/*.sqlite3
-data/secrets*
-logs/
-*.log
-.env
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
 
+# Data (auto-generated)
+data/audio/
+data/assistant.sqlite3
+data/secrets.dpapi
+data/app_config.json
+
+# Node
 node_modules/
-dist/
-out/
+desktop/node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+lightnovel_temp/
+scripts/test_*.py

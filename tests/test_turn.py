@@ -45,10 +45,15 @@ def test_interrupt():
 
 
 def test_long_silence():
-    # 停3.8秒 = 默认回答
-    d = calc_endscore("我想让她更像真人", 3800, 6000, 0.85, False)
+    # 停2.6秒 = 默认回答（新阈值 >= 2500ms）
+    d = calc_endscore("我想让她更像真人", 2600, 6000, 0.85, False)
     assert d.action == "answer_now", f"Expected answer_now, got {d.action}"
     print(f"  ✓ long silence => answer_now: {d.reason}")
+
+    # 停3.8秒 = 还是默认回答
+    d = calc_endscore("我想让她更像真人", 3800, 6000, 0.85, False)
+    assert d.action == "answer_now", f"Expected answer_now, got {d.action}"
+    print(f"  ✓ long silence (3800ms) => answer_now: {d.reason}")
 
 
 if __name__ == "__main__":

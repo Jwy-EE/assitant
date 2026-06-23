@@ -153,34 +153,40 @@ def calc_endscore(
         )
 
     # ── 6. 按停顿时间判断 ──
-    # 4 个沉默区间
-    if silence_ms < 600:
+    # 5 个沉默区间（调整后更激进地响应）
+    if silence_ms < 400:
+        return TurnDecision(
+            action="listening",
+            confidence=0.55,
+            reason=f"静音仅 {silence_ms}ms，正常语流停顿",
+        )
+    elif silence_ms < 800:
+        # 400~800ms：短句且非 wait_more 可回答
+        if len(text) <= 4 and asr_confidence >= 0.7:
+            return TurnDecision(
+                action="answer_now",
+                confidence=0.65,
+                reason=f"短句({len(text)}字) + 静音 {silence_ms}ms，判定说完",
+            )
         return TurnDecision(
             action="listening",
             confidence=0.60,
-            reason=f"静音仅 {silence_ms}ms，正常语流停顿",
-        )
-    elif silence_ms < 1200:
-        return TurnDecision(
-            action="listening",
-            confidence=0.65,
             reason=f"静音 {silence_ms}ms，轻微犹豫，继续听",
         )
-    elif silence_ms < 2200:
-        # 在 1.2s~2.2s 之间：看语义是否显得完整
-        # 如果句子比较短(<5字)且没有WAIT_MORE标记，可以回答
-        if len(text) <= 5:
+    elif silence_ms < 1500:
+        # 800~1500ms：短句直接回答，长句继续听
+        if len(text) <= 6:
             return TurnDecision(
                 action="answer_now",
-                confidence=0.70,
+                confidence=0.72,
                 reason=f"短句({len(text)}字) + 静音 {silence_ms}ms，判定说完",
             )
         return TurnDecision(
             action="wait_more",
-            confidence=0.72,
+            confidence=0.68,
             reason=f"静音 {silence_ms}ms，但语义可能未完",
         )
-    elif silence_ms < 3500:
+    elif silence_ms < 2500:
         return TurnDecision(
             action="answer_now",
             confidence=0.78,
@@ -189,6 +195,6 @@ def calc_endscore(
     else:
         return TurnDecision(
             action="answer_now",
-            confidence=0.85,
+            confidence=0.88,
             reason=f"静音 {silence_ms}ms，默认回答",
         )

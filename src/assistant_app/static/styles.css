@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   color-scheme: dark;
   --bg: #141815;
   --panel: rgba(22, 28, 23, 0.78);
@@ -255,6 +255,117 @@ pre {
 @keyframes breathe {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(5px); }
+}
+
+/* ──────────────────────────────────────
+   字幕同步区域
+   ────────────────────────────────────── */
+.subtitle-sync {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+  background: var(--panel-strong);
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subtitle-sentence {
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.15s ease, opacity 0.15s ease;
+  opacity: 0.5;
+}
+
+.subtitle-sentence.active {
+  background: rgba(219, 233, 201, 0.12);
+  opacity: 1;
+}
+
+.sentence-ja {
+  display: block;
+  font-size: 15px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.sentence-zh {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+  margin-top: 1px;
+}
+
+/* ──────────────────────────────────────
+   麦克风状态指示器
+   ────────────────────────────────────── */
+.mic-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border: 1px solid #3a483c;
+  border-radius: 999px;
+  background: rgba(10, 12, 10, 0.6);
+}
+
+.mic-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #5a6b5b;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mic-indicator.listening .mic-dot {
+  background: #6fcf97;
+  box-shadow: 0 0 8px rgba(111, 207, 151, 0.6);
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+.mic-indicator.deciding .mic-dot {
+  background: #f2c94c;
+  box-shadow: 0 0 8px rgba(242, 201, 76, 0.6);
+  animation: pulse-dot 0.6s ease-in-out infinite;
+}
+
+.mic-indicator.answering .mic-dot {
+  background: #bb6bd9;
+  box-shadow: 0 0 8px rgba(187, 107, 217, 0.6);
+}
+
+.mic-indicator.idle .mic-dot {
+  background: #5a6b5b;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+}
+
+/* ──────────────────────────────────────
+   麦克风按钮状态
+   ────────────────────────────────────── */
+#micButton.recording {
+  background: #6fcf97;
+  color: #0d1b12;
+  border-color: #6fcf97;
+}
+
+#micButton.thinking {
+  background: #f2c94c;
+  color: #1a1a0a;
+  border-color: #f2c94c;
+}
+
+#micButton.answering {
+  background: #bb6bd9;
+  color: #1a0a1a;
+  border-color: #bb6bd9;
 }
 
 @media (max-width: 900px) {

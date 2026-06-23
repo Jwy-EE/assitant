@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
@@ -20,6 +20,10 @@
           <span id="emotion">teasing_neutral</span>
           <span id="workMode">idle</span>
         </div>
+        <div class="mic-indicator" id="micIndicator">
+          <div class="mic-dot"></div>
+          <span class="mic-label">待机</span>
+        </div>
       </section>
 
       <section class="workbench">
@@ -27,7 +31,7 @@
           <h1>研究搭档</h1>
           <div class="header-actions">
             <button id="refreshButton" type="button" title="刷新状态">Refresh</button>
-            <button id="micButton" type="button" title="语音输入">Mic</button>
+            <button id="micButton" type="button" title="语音输入">🎤 说话</button>
           </div>
         </header>
 
@@ -36,8 +40,13 @@
           <p class="zh" id="zhText">启动了。设置 DeepSeek key 后再和我说话。</p>
         </section>
 
+        <!-- 逐句字幕同步区域 -->
+        <section class="subtitle-sync" id="subtitleSentences">
+          <!-- 由 JS 动态添加字幕行 -->
+        </section>
+
         <form id="chatForm" class="composer">
-          <textarea id="userText" rows="3" placeholder="用中文输入，或点 Mic 说话"></textarea>
+          <textarea id="userText" rows="3" placeholder="用中文输入，或点 🎤 说话"></textarea>
           <button type="submit">发送</button>
         </form>
 
@@ -100,4 +109,3 @@
     <script src="/static/main.js"></script>
   </body>
 </html>
-

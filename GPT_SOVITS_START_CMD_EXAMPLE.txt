@@ -1,0 +1,13 @@
+Set this once if you want true GPT-SoVITS to auto-start from the one-click launcher.
+
+Example:
+
+set "GPT_SOVITS_START_CMD=cd /d D:\voice_clone_models\GPT-SoVITS && call runtime\python.exe api_v2.py -a 127.0.0.1 -p 9880"
+
+Then launch:
+
+一键启动.cmd
+
+Notes:
+- Replace the path and python command with your real GPT-SoVITS install.
+- If this variable is not set, the one-click launcher still works, but voice falls back to the older approximation engine.

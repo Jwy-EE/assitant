@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -21,7 +22,7 @@ from .tools.divergence import DivergenceMeter
 from .turn import TurnDecision, calc_endscore
 from .tools.permissions import PermissionBroker
 from .tools.research import ResearchSearch
-from .voice import VoiceService
+from .voice import VoiceResult, VoiceService
 from .vtube import VTubeEvent, VTubeStudioClient
 
 
@@ -49,6 +50,13 @@ class ChatRequest(BaseModel):
     source: str = "text"
 
 
+class ChatSegment(BaseModel):
+    ja_text: str
+    zh_subtitle: str
+    audio_url: str | None = None
+    duration_ms: int
+
+
 class ChatResponse(BaseModel):
     ja_text: str
     zh_subtitle: str
@@ -61,6 +69,8 @@ class ChatResponse(BaseModel):
     vtube: dict[str, Any] | None = None
     audio_url: str | None = None
     voice: dict[str, Any]
+    segments: list[ChatSegment]
+    metrics: dict[str, Any]
 
 
 class KeyRequest(BaseModel):
@@ -293,7 +303,6 @@ async def chat(request: ChatRequest) -> ChatResponse:
             detail="DeepSeek API key is missing. Set it in the settings panel or DEEPSEEK_API_KEY.",
         )
 
-    # Phase 1: memory + soul (低耗时)
     remembered_rows = memory_store.search(request.text, limit=8)
     remembered = [row["content"] for row in remembered_rows]
     state = SoulState.from_dict(memory_store.get_state("soul", SoulState().to_dict()))
@@ -301,7 +310,6 @@ async def chat(request: ChatRequest) -> ChatResponse:
     system_prompt = system_persona_prompt(state, remembered)
     t1 = time.perf_counter()
 
-    # Phase 2: DeepSeek API (高耗时)
     client = DeepSeekClient(api_key=api_key, timeout=30.0)
     try:
         result = await client.chat_json(
@@ -341,8 +349,6 @@ async def chat(request: ChatRequest) -> ChatResponse:
     permission = permission_broker.inspect_tool_intent(parsed["tool_intent"]["risk"])
     t3 = time.perf_counter()
 
-    # Phase 3: TTS 合成 + VTube (后置，不阻塞文字返回)
-    # 先合成 VTube（几乎瞬时），TTS 异步进行
     vtube_status = await vtube_client.emit(
         VTubeEvent(
             emotion=parsed["emotion"],
@@ -352,14 +358,28 @@ async def chat(request: ChatRequest) -> ChatResponse:
     )
     t4 = time.perf_counter()
 
-    # TTS: 出错不阻塞对话，前端兜底用浏览器 TTS
+    voice_result = None
     try:
         voice_result = await voice_service.synthesize(parsed["ja_text"], parsed["voice_style"])
-    except Exception:
-        voice_result = None
+    except Exception as exc:
+        provider = os.environ.get("ASSISTANT_TTS_PROVIDER", "browser").strip().lower() or "browser"
+        voice_result = VoiceResult(audio_url=None, engine=provider, reason=f"TTS failed: {exc}")
     t5 = time.perf_counter()
 
-    _log_chat_timing(t0, t1, t2, t3, t4, t5, request.text)
+    cloned_voice_ready = bool(voice_result and voice_result.engine == "http" and voice_result.audio_url)
+    metrics = {
+        "memory_ms": int((t1 - t0) * 1000),
+        "llm_ms": int((t2 - t1) * 1000),
+        "post_ms": int((t3 - t2) * 1000),
+        "vtube_ms": int((t4 - t3) * 1000),
+        "tts_ms": int((t5 - t4) * 1000),
+        "total_ms": int((t5 - t0) * 1000),
+        "voice_engine": voice_result.engine if voice_result else "browser",
+        "fallback_used": not cloned_voice_ready,
+    }
+    _log_chat_timing(metrics, request.text)
+
+    segments = _build_segments(parsed["ja_text"], parsed["zh_subtitle"], voice_result.audio_url if voice_result else None)
 
     return ChatResponse(
         ja_text=parsed["ja_text"],
@@ -373,6 +393,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
         vtube=vtube_status,
         audio_url=voice_result.audio_url if voice_result else None,
         voice=voice_result.__dict__ if voice_result else {"engine": "browser", "reason": "TTS fallback"},
+        segments=segments,
+        metrics=metrics,
     )
 
 
@@ -392,16 +414,44 @@ def _normalize_reply(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _log_chat_timing(t0: float, t1: float, t2: float, t3: float, t4: float, t5: float, text: str) -> None:
+def _split_sentences(text: str) -> list[str]:
+    parts = re.findall(r"[^。！？!?\n]+[。！？!?\n]?", text or "")
+    return [part.strip() for part in parts if part.strip()] or ([text.strip()] if text.strip() else [])
+
+
+def _estimate_segment_duration_ms(ja_text: str, zh_text: str) -> int:
+    weight = max(len(ja_text) * 140, len(zh_text) * 110, 1)
+    return max(900, min(6000, weight))
+
+
+def _build_segments(ja_text: str, zh_text: str, audio_url: str | None) -> list[ChatSegment]:
+    ja_segments = _split_sentences(ja_text)
+    zh_segments = _split_sentences(zh_text)
+    segment_count = max(len(ja_segments), 1)
+    segments: list[ChatSegment] = []
+    for idx, ja_segment in enumerate(ja_segments or [ja_text]):
+        zh_segment = zh_segments[idx] if idx < len(zh_segments) else (zh_segments[-1] if zh_segments else zh_text)
+        segments.append(
+            ChatSegment(
+                ja_text=ja_segment,
+                zh_subtitle=zh_segment,
+                audio_url=audio_url,
+                duration_ms=_estimate_segment_duration_ms(ja_segment, zh_segment),
+            )
+        )
+    if audio_url and segments:
+        average_ms = max(900, min(5000, int(sum(segment.duration_ms for segment in segments) / segment_count)))
+        segments = [segment.model_copy(update={"duration_ms": average_ms}) for segment in segments]
+    return segments
+
+
+def _log_chat_timing(metrics: dict[str, Any], text: str) -> None:
     print(
-        f"[chat timing] "
-        f"memory_soul={int((t1-t0)*1000)}ms "
-        f"deepseek={int((t2-t1)*1000)}ms "
-        f"postproc={int((t3-t2)*1000)}ms "
-        f"vtube={int((t4-t3)*1000)}ms "
-        f"tts={int((t5-t4)*1000)}ms "
-        f"total={int((t5-t0)*1000)}ms "
-        f"text='{text[:30]}...' len={len(text)}"
+        f"[chat timing] memory={metrics['memory_ms']}ms "
+        f"llm={metrics['llm_ms']}ms post={metrics['post_ms']}ms "
+        f"vtube={metrics['vtube_ms']}ms tts={metrics['tts_ms']}ms "
+        f"total={metrics['total_ms']}ms voice={metrics['voice_engine']} "
+        f"fallback={metrics['fallback_used']} text='{text[:30]}...' len={len(text)}"
     )
 
 
@@ -420,3 +470,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
+

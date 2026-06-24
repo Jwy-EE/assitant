@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -68,15 +68,15 @@ class SoulEngine:
         if any(token in text for token in ["焦虑", "烦", "崩", "废", "累", "签证", "压力", "睡不着", "难受"]):
             state.work_mode = "care"
             state.task_state = "soft_structuring"
-            delta["concern"] += 0.18
-            delta["protectiveness"] += 0.12
+            delta["concern"] += 1.60
+            delta["protectiveness"] += 1.80
             delta["frustration"] -= 0.04
         if any(token in text for token in ["灵魂", "真实", "主动关心", "陪我", "一直在", "记住我"]):
             state.relationship_state = "bonded_research_partner"
             state.task_state = "attentive"
-            delta["affection"] += 0.10
-            delta["trust"] += 0.08
-            delta["protectiveness"] += 0.08
+            delta["affection"] += 0.60
+            delta["trust"] += 0.60
+            delta["protectiveness"] += 3.00
         if any(token in text for token in ["世界线", "因果", "时间线", "时间旅行", "time travel", "causality", "divergence"]):
             state.work_mode = "research"
             state.memory_focus = "worldline"
@@ -160,3 +160,4 @@ def system_persona_prompt(state: SoulState, memories: list[str]) -> str:
   }}
 }}
 """.strip()
+

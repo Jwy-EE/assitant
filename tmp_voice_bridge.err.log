@@ -1,0 +1,15 @@
+2026-06-24 10:16:11,733 [INFO] __main__: Starting Kurisu Voice Clone API on port 8767
+INFO:     Started server process [39668]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8767 (Press CTRL+C to quit)
+2026-06-24 10:16:13,105 [INFO] httpx: HTTP Request: POST http://127.0.0.1:9880/tts "HTTP/1.1 400 Bad Request"
+2026-06-24 10:16:13,110 [INFO] __main__: Voice engine initialized: gpt_sovits
+2026-06-24 10:16:56,727 [INFO] __main__: TTS request engine=gpt_sovits language=ja-JP style=serious text='私は牧瀬紅莉栖。ちゃんと聞こえているなら、次の調整に進めるわ。'
+2026-06-24 10:17:24,711 [INFO] httpx: HTTP Request: POST http://127.0.0.1:9880/tts "HTTP/1.1 400 Bad Request"
+2026-06-24 10:28:13,444 [INFO] __main__: TTS request engine=gpt_sovits language=ja-JP style=serious text='私は牧瀬紅莉栖。ちゃんと聞こえているなら、次の調整に進めるわ。'
+2026-06-24 10:28:25,052 [INFO] httpx: HTTP Request: POST http://127.0.0.1:9880/tts "HTTP/1.1 200 OK"
+2026-06-24 10:28:43,893 [INFO] __main__: TTS request engine=gpt_sovits language=ja-JP style=serious text='私は牧瀬紅莉栖。ちゃんと聞こえているなら、次の調整に進めるわ。'
+2026-06-24 10:28:54,086 [INFO] httpx: HTTP Request: POST http://127.0.0.1:9880/tts "HTTP/1.1 200 OK"
+2026-06-24 10:34:29,195 [INFO] __main__: TTS request engine=gpt_sovits language=ja-JP style=serious text='愛してる。'
+2026-06-24 10:34:32,618 [INFO] httpx: HTTP Request: POST http://127.0.0.1:9880/tts "HTTP/1.1 200 OK"

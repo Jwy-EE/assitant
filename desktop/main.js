@@ -7,6 +7,23 @@ const path = require("node:path");
 const ROOT_DIR = path.resolve(__dirname, "..");
 const BACKEND_URL = "http://127.0.0.1:8765";
 const TRAY_ICON_PATH = path.join(__dirname, "effect-preview.png");
+const ELECTRON_USER_DATA = path.join(ROOT_DIR, ".electron-user-data");
+const ELECTRON_CACHE_DIR = path.join(ELECTRON_USER_DATA, "cache");
+const ELECTRON_SESSION_DIR = path.join(ELECTRON_USER_DATA, "session");
+
+for (const dir of [ELECTRON_USER_DATA, ELECTRON_CACHE_DIR, ELECTRON_SESSION_DIR]) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+app.commandLine.appendSwitch("user-data-dir", ELECTRON_USER_DATA);
+app.setPath("userData", ELECTRON_USER_DATA);
+app.setPath("sessionData", ELECTRON_SESSION_DIR);
+app.setPath("cache", ELECTRON_CACHE_DIR);
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch("disable-gpu");
+app.commandLine.appendSwitch("disable-gpu-compositing");
+app.commandLine.appendSwitch("disable-software-rasterizer");
 
 let backendProcess = null;
 let petWindow = null;
@@ -48,6 +65,9 @@ function waitForBackend(timeoutMs = 12000) {
 }
 
 function startBackend() {
+  if (process.env.ASSISTANT_BACKEND_MANAGED === "1") {
+    return;
+  }
   if (backendProcess) return;
   backendProcess = childProcess.spawn(getPythonCommand(), ["-m", "assistant_app"], {
     cwd: ROOT_DIR,
@@ -55,8 +75,9 @@ function startBackend() {
       ...process.env,
       PYTHONPATH: path.join(ROOT_DIR, "src"),
       PYTHONUTF8: "1",
-      ASSISTANT_TTS_PROVIDER: "edge-tts",
-      ASSISTANT_TTS_VOICE: "ja-JP-NanamiNeural",
+      ASSISTANT_TTS_PROVIDER: "http",
+      ASSISTANT_TTS_ENDPOINT: "http://127.0.0.1:8767/tts",
+      ASSISTANT_TTS_VOICE: "kurisu_ja",
     },
     windowsHide: true,
     stdio: "ignore",
@@ -156,7 +177,9 @@ app.whenReady().then(async () => {
       permission === "media" || permission === "microphone" || permission === "audioCapture"
     );
   }
-  startBackend();
+  if (process.env.ASSISTANT_BACKEND_MANAGED !== "1") {
+    startBackend();
+  }
   await waitForBackend().catch(() => undefined);
   createPetWindow();
   createTray();
@@ -247,4 +270,3 @@ app.on("before-quit", () => {
     backendProcess = null;
   }
 });
-

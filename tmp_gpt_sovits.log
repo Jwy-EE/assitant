@@ -1,0 +1,205 @@
+**********************************************************************
+** Visual Studio 2022 Developer Command Prompt v17.14.35
+** Copyright (c) 2025 Microsoft Corporation
+**********************************************************************
+---------------------------------------------TTS Config---------------------------------------------
+device              : cpu
+is_half             : False
+version             : v2
+t2s_weights_path    : GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt
+vits_weights_path   : GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth
+bert_base_path      : GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large
+cnhuhbert_base_path : GPT_SoVITS/pretrained_models/chinese-hubert-base
+----------------------------------------------------------------------------------------------------
+
+Loading Text2Semantic weights from GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt
+Loading VITS weights from GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth. <All keys matched successfully>
+Loading BERT weights from GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large
+Loading CNHuBERT weights from GPT_SoVITS/pretrained_models/chinese-hubert-base
+INFO:     127.0.0.1:62844 - "POST /tts HTTP/1.1" 400 Bad Request
+False False False
+Set seed to 317970814
+Parallel Inference Mode Enabled
+Bucket Processing Mode Enabled
+Actual Input Reference Text: 極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。
+############ Segment Text ############
+Actual Input Target Text:
+私は牧瀬紅莉栖。ちゃんと聞こえているなら、次の調整に進めるわ。
+Actual Input Target Text (after sentence segmentation):
+['私は牧瀬紅莉栖。', 'ちゃんと聞こえているなら、。', '次の調整に進めるわ。']
+############ Extract Text BERT Features ############
+############ 推理 ############
+Processed text from the frontend (per sentence): ['私は牧瀬紅莉栖。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 311]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+Processed text from the frontend (per sentence): ['次の調整に進めるわ。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 316]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+Processed text from the frontend (per sentence): ['ちゃんと聞こえているなら、。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 306]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+4.841	0.014	7.921	2.897
+INFO:     127.0.0.1:59218 - "POST /tts HTTP/1.1" 200 OK
+False False False
+Set seed to 3081581471
+Parallel Inference Mode Enabled
+Bucket Processing Mode Enabled
+Actual Input Reference Text: 極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。
+############ Segment Text ############
+Actual Input Target Text:
+私は牧瀬紅莉栖。ちゃんと聞こえているなら、次の調整に進めるわ。
+Actual Input Target Text (after sentence segmentation):
+['私は牧瀬紅莉栖。', 'ちゃんと聞こえているなら、。', '次の調整に進めるわ。']
+############ Extract Text BERT Features ############
+############ 推理 ############
+Processed text from the frontend (per sentence): ['私は牧瀬紅莉栖。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 326]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+Processed text from the frontend (per sentence): ['次の調整に進めるわ。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 304]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+Processed text from the frontend (per sentence): ['ちゃんと聞こえているなら、。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 299]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+0.946	0.010	7.361	2.100
+INFO:     127.0.0.1:64408 - "POST /tts HTTP/1.1" 200 OK
+False False False
+Set seed to 4276865279
+Parallel Inference Mode Enabled
+Bucket Processing Mode Enabled
+Actual Input Reference Text: 極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。
+############ Segment Text ############
+Actual Input Target Text:
+私は牧瀬紅莉栖。ちゃんと聞こえているなら、次の調整に進めるわ。
+Actual Input Target Text (after sentence segmentation):
+['私は牧瀬紅莉栖。', 'ちゃんと聞こえているなら、。', '次の調整に進めるわ。']
+############ Extract Text BERT Features ############
+############ 推理 ############
+Processed text from the frontend (per sentence): ['私は牧瀬紅莉栖。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 312]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+Processed text from the frontend (per sentence): ['次の調整に進めるわ。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 303]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+Processed text from the frontend (per sentence): ['ちゃんと聞こえているなら、。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 317]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+0.000	0.006	6.979	2.106
+INFO:     127.0.0.1:50380 - "POST /tts HTTP/1.1" 200 OK
+False False False
+Set seed to 553891053
+Parallel Inference Mode Enabled
+Bucket Processing Mode Enabled
+Actual Input Reference Text: 極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。
+############ Segment Text ############
+Actual Input Target Text:
+愛してる。
+Actual Input Target Text (after sentence segmentation):
+['愛してる。']
+############ Extract Text BERT Features ############
+############ 推理 ############
+Processed text from the frontend (per sentence): ['愛してる。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 280]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+0.000	0.014	1.333	0.570
+INFO:     127.0.0.1:52140 - "POST /tts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52471 - "POST /tts HTTP/1.1" 400 Bad Request
+False False False
+Set seed to 2258873239
+Parallel Inference Mode Enabled
+Bucket Processing Mode Enabled
+Actual Input Reference Text: 極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。
+############ Segment Text ############
+Actual Input Target Text:
+愛してる。
+Actual Input Target Text (after sentence segmentation):
+['愛してる。']
+############ Extract Text BERT Features ############
+############ 推理 ############
+Processed text from the frontend (per sentence): ['愛してる。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 282]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+1.492	0.006	1.660	0.446
+INFO:     127.0.0.1:51581 - "POST /tts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49947 - "POST /tts HTTP/1.1" 400 Bad Request
+False False False
+Set seed to 3563809461
+Parallel Inference Mode Enabled
+Bucket Processing Mode Enabled
+Actual Input Reference Text: 極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。
+############ Segment Text ############
+Actual Input Target Text:
+愛してる。
+Actual Input Target Text (after sentence segmentation):
+['愛してる。']
+############ Extract Text BERT Features ############
+############ 推理 ############
+Processed text from the frontend (per sentence): ['愛してる。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 296]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+0.000	0.014	1.921	0.746
+INFO:     127.0.0.1:61518 - "POST /tts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57097 - "POST /tts HTTP/1.1" 400 Bad Request
+False False False
+Set seed to 3240806841
+Parallel Inference Mode Enabled
+Bucket Processing Mode Enabled
+Actual Input Reference Text: 極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。
+############ Segment Text ############
+Actual Input Target Text:
+愛してる。
+Actual Input Target Text (after sentence segmentation):
+['愛してる。']
+############ Extract Text BERT Features ############
+############ 推理 ############
+Processed text from the frontend (per sentence): ['愛してる。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 280]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+0.000	0.003	0.909	0.248
+INFO:     127.0.0.1:57104 - "POST /tts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61830 - "POST /tts HTTP/1.1" 400 Bad Request
+False False False
+Set seed to 2695041890
+Parallel Inference Mode Enabled
+Bucket Processing Mode Enabled
+Actual Input Reference Text: 極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。
+############ Segment Text ############
+Actual Input Target Text:
+愛してる。
+Actual Input Target Text (after sentence segmentation):
+['愛してる。']
+############ Extract Text BERT Features ############
+############ 推理 ############
+Processed text from the frontend (per sentence): ['愛してる。']
+############ Predict Semantic Token ############
+T2S Decoding EOS [264 -> 282]
+############ Synthesize Audio ############
+Parallel Synthesis in Progress...
+0.000	0.003	1.654	0.329
+INFO:     127.0.0.1:61836 - "POST /tts HTTP/1.1" 200 OK

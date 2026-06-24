@@ -1,0 +1,804 @@
+﻿const pet = document.getElementById("pet");
+const dialogueBox = document.getElementById("dialogueBox");
+const statusLine = document.getElementById("status");
+const modeTag = document.getElementById("modeTag");
+const jaLine = document.getElementById("jaLine");
+const zhLine = document.getElementById("zhLine");
+const composer = document.getElementById("petComposer");
+const petInput = document.getElementById("petInput");
+const micButton = document.getElementById("micButton");
+const openWorkbench = document.getElementById("openWorkbench");
+
+const STATE = {
+  IDLE: "IDLE",
+  LISTENING: "LISTENING",
+  DECIDING: "DECIDING",
+  THINKING: "THINKING",
+  SPEAKING: "SPEAKING",
+  INTERRUPTING: "INTERRUPTING",
+  ANNOYED: "ANNOYED",
+};
+
+const VAD_POLL_MS = 120;
+const INTERRUPT_POLL_MS = 120;
+const SPEECH_THRESHOLD = 0.022;
+const MIN_SPEECH_MS = 700;
+const SILENCE_HOLD_MS = 1400;
+const INTERRUPT_SPEECH_MS = 520;
+const MAX_WAIT_FOR_SPEECH_MS = 5000;
+const MAX_RECORDING_MS = 25000;
+const DIALOGUE_LOCK_MS = 45000;
+
+let currentState = STATE.IDLE;
+let autoListenEnabled = true;
+let autoListenTimer = null;
+let lastCheckinAt = 0;
+let initializedPrompt = false;
+let dialogueLockUntil = 0;
+let lastConversationAt = 0;
+
+let micStream = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordingContext = null;
+let recordingAnalyser = null;
+let recordingSource = null;
+let recordingTimer = null;
+let recordingStartedAt = 0;
+let speechStartedAt = 0;
+let lastVoiceAt = 0;
+let hasDetectedSpeech = false;
+let pendingTranscript = "";
+
+let interruptContext = null;
+let interruptAnalyser = null;
+let interruptSource = null;
+let interruptTimer = null;
+let interruptSpeechStart = 0;
+
+let currentAudio = null;
+let currentSpeechUtterance = null;
+let currentSegmentTimers = [];
+let isChatting = false;
+
+function visualStateFor(state) {
+  switch (state) {
+    case STATE.SPEAKING:
+      return "speaking";
+    case STATE.ANNOYED:
+      return "annoyed";
+    case STATE.IDLE:
+      return "idle";
+    default:
+      return "thinking";
+  }
+}
+
+function setState(state) {
+  currentState = state;
+  pet.classList.remove("idle", "thinking", "speaking", "proud", "annoyed");
+  pet.classList.add(visualStateFor(state));
+  modeTag.textContent = state;
+}
+
+function setMicVisual() {
+  micButton.textContent = autoListenEnabled ? "AUTO" : "MUTE";
+  micButton.classList.toggle("active", autoListenEnabled);
+}
+
+function setDialogue(jaText, zhText, { live = false, lockMs = DIALOGUE_LOCK_MS } = {}) {
+  jaLine.textContent = jaText;
+  zhLine.textContent = zhText;
+  dialogueLockUntil = Date.now() + lockMs;
+  lastConversationAt = Date.now();
+  dialogueBox.classList.toggle("live", live);
+}
+
+function canReplaceDialogue() {
+  return Date.now() >= dialogueLockUntil && currentState !== STATE.SPEAKING && currentState !== STATE.LISTENING;
+}
+
+function clearAutoListenTimer() {
+  if (!autoListenTimer) {
+    return;
+  }
+  clearTimeout(autoListenTimer);
+  autoListenTimer = null;
+}
+
+function scheduleAutoListen(delayMs = 400) {
+  clearAutoListenTimer();
+  if (!autoListenEnabled || currentState === STATE.LISTENING || currentState === STATE.SPEAKING || isChatting) {
+    return;
+  }
+  autoListenTimer = setTimeout(() => {
+    autoListenTimer = null;
+    if (!autoListenEnabled || currentState === STATE.LISTENING || currentState === STATE.SPEAKING || isChatting) {
+      return;
+    }
+    void beginListening("auto");
+  }, delayMs);
+}
+
+function splitSentences(text) {
+  if (!text) {
+    return [];
+  }
+  const parts = text.match(/[^。！？!?\n]+[。！？!?\n]?/g);
+  return parts ? parts.map((part) => part.trim()).filter(Boolean) : [text.trim()];
+}
+
+function estimateSegmentDurationMs(jaText, zhText) {
+  const weight = Math.max((jaText || "").length * 140, (zhText || "").length * 110, 1);
+  return Math.min(Math.max(weight, 900), 5000);
+}
+
+function stopMediaTracks(stream) {
+  if (!stream) {
+    return;
+  }
+  for (const track of stream.getTracks()) {
+    track.stop();
+  }
+}
+
+async function ensureMicStream() {
+  if (micStream) {
+    return micStream;
+  }
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  return micStream;
+}
+
+async function releaseMicStream() {
+  if (!micStream) {
+    return;
+  }
+  stopMediaTracks(micStream);
+  micStream = null;
+}
+
+async function cleanupRecordingMonitor() {
+  if (recordingTimer) {
+    clearInterval(recordingTimer);
+    recordingTimer = null;
+  }
+  if (recordingSource) {
+    recordingSource.disconnect();
+    recordingSource = null;
+  }
+  if (recordingAnalyser) {
+    recordingAnalyser.disconnect();
+    recordingAnalyser = null;
+  }
+  if (recordingContext) {
+    try {
+      await recordingContext.close();
+    } catch {
+      // ignore
+    }
+    recordingContext = null;
+  }
+}
+
+async function cleanupInterruptMonitor() {
+  if (interruptTimer) {
+    clearInterval(interruptTimer);
+    interruptTimer = null;
+  }
+  if (interruptSource) {
+    interruptSource.disconnect();
+    interruptSource = null;
+  }
+  if (interruptAnalyser) {
+    interruptAnalyser.disconnect();
+    interruptAnalyser = null;
+  }
+  if (interruptContext) {
+    try {
+      await interruptContext.close();
+    } catch {
+      // ignore
+    }
+    interruptContext = null;
+  }
+  interruptSpeechStart = 0;
+}
+
+function calculateLevel(analyser) {
+  if (!analyser) {
+    return 0;
+  }
+  const data = new Uint8Array(analyser.fftSize);
+  analyser.getByteTimeDomainData(data);
+  let sum = 0;
+  for (let i = 0; i < data.length; i += 1) {
+    const centered = (data[i] - 128) / 128;
+    sum += centered * centered;
+  }
+  return Math.sqrt(sum / data.length);
+}
+
+function resetRecordingFlags() {
+  recordingStartedAt = 0;
+  speechStartedAt = 0;
+  lastVoiceAt = 0;
+  hasDetectedSpeech = false;
+}
+
+function clearPlaybackTimers() {
+  for (const timerId of currentSegmentTimers) {
+    clearTimeout(timerId);
+  }
+  currentSegmentTimers = [];
+}
+
+async function stopCurrentAudio() {
+  clearPlaybackTimers();
+  await cleanupInterruptMonitor();
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+  if (currentSpeechUtterance && "speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+    currentSpeechUtterance = null;
+  }
+}
+
+async function finishSpeech() {
+  await stopCurrentAudio();
+  dialogueBox.classList.remove("live");
+  if (currentState === STATE.SPEAKING || currentState === STATE.INTERRUPTING) {
+    setState(STATE.IDLE);
+  }
+  scheduleAutoListen(450);
+}
+
+async function startInterruptMonitor() {
+  await cleanupInterruptMonitor();
+  let stream;
+  try {
+    stream = await ensureMicStream();
+  } catch {
+    return;
+  }
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) {
+    return;
+  }
+
+  interruptContext = new AudioContextClass();
+  interruptSource = interruptContext.createMediaStreamSource(stream);
+  interruptAnalyser = interruptContext.createAnalyser();
+  interruptAnalyser.fftSize = 1024;
+  interruptSource.connect(interruptAnalyser);
+  interruptTimer = setInterval(() => {
+    if (currentState !== STATE.SPEAKING) {
+      void cleanupInterruptMonitor();
+      return;
+    }
+    const level = calculateLevel(interruptAnalyser);
+    if (level >= SPEECH_THRESHOLD) {
+      if (!interruptSpeechStart) {
+        interruptSpeechStart = Date.now();
+      } else if (Date.now() - interruptSpeechStart >= INTERRUPT_SPEECH_MS) {
+        void interruptAISpeaking();
+      }
+    } else {
+      interruptSpeechStart = 0;
+    }
+  }, INTERRUPT_POLL_MS);
+}
+
+function encodeWav(samples, sampleRate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const writeString = (offset, value) => {
+    for (let i = 0; i < value.length; i += 1) {
+      view.setUint8(offset + i, value.charCodeAt(i));
+    }
+  };
+
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, "data");
+  view.setUint32(40, samples.length * 2, true);
+
+  let offset = 44;
+  for (let i = 0; i < samples.length; i += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
+async function blobToWav(blob) {
+  const arrayBuffer = await blob.arrayBuffer();
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) {
+    throw new Error("AudioContext unavailable");
+  }
+  const decodeContext = new AudioContextClass();
+  try {
+    const audioBuffer = await decodeContext.decodeAudioData(arrayBuffer.slice(0));
+    return encodeWav(audioBuffer.getChannelData(0), audioBuffer.sampleRate);
+  } finally {
+    await decodeContext.close();
+  }
+}
+
+async function transcribeAudio(blob) {
+  const wavBlob = await blobToWav(blob);
+  const formData = new FormData();
+  formData.append("audio", wavBlob, "mic.wav");
+  const response = await fetch("/api/asr/transcribe", { method: "POST", body: formData });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.detail || `ASR failed (${response.status})`);
+  }
+  return data;
+}
+
+async function decideTurn(text, silenceMs, speechMs, confidence) {
+  try {
+    const response = await fetch("/api/turn/decide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript: text,
+        silence_ms: silenceMs,
+        speech_ms: speechMs,
+        asr_confidence: confidence,
+        state: currentState,
+        ai_speaking: currentState === STATE.SPEAKING,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`turn decide status ${response.status}`);
+    }
+    return await response.json();
+  } catch {
+    return { action: "answer_now", confidence: 0.5, reason: "fallback after turn error" };
+  }
+}
+
+async function beginListening(trigger = "auto") {
+  if (!autoListenEnabled || currentState === STATE.LISTENING || isChatting) {
+    return;
+  }
+  clearAutoListenTimer();
+  await stopCurrentAudio();
+
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    setDialogue("音声入力は使えないわ。", "当前环境不支持录音，先用文字输入。", { lockMs: 15000 });
+    setState(STATE.ANNOYED);
+    return;
+  }
+
+  let stream;
+  try {
+    stream = await ensureMicStream();
+  } catch (error) {
+    setDialogue("マイク権限を確認しなさい。", "麦克风权限不可用。", { lockMs: 15000 });
+    statusLine.textContent = error?.message || "microphone permission denied";
+    setState(STATE.ANNOYED);
+    return;
+  }
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) {
+    setDialogue("音声解析が使えないわ。", "当前环境不支持音频分析。", { lockMs: 15000 });
+    setState(STATE.ANNOYED);
+    return;
+  }
+
+  await cleanupRecordingMonitor();
+  recordingContext = new AudioContextClass();
+  recordingSource = recordingContext.createMediaStreamSource(stream);
+  recordingAnalyser = recordingContext.createAnalyser();
+  recordingAnalyser.fftSize = 2048;
+  recordingSource.connect(recordingAnalyser);
+
+  recordedChunks = [];
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = (event) => {
+    if (event.data && event.data.size > 0) {
+      recordedChunks.push(event.data);
+    }
+  };
+  mediaRecorder.onstop = async () => {
+    const recorder = mediaRecorder;
+    mediaRecorder = null;
+    const mode = recorder?.__stopMode || "finalize";
+    const allowRestart = recorder?.__allowRestart !== false;
+    const silenceMs = recorder?.__silenceMs || 0;
+    const speechMs = recorder?.__speechMs || 0;
+    const blob = new Blob(recordedChunks, { type: recorder?.mimeType || "audio/webm" });
+    recordedChunks = [];
+    if (mode === "finalize") {
+      await finishRecording(blob, allowRestart, silenceMs, speechMs);
+    } else if (allowRestart) {
+      scheduleAutoListen(450);
+    }
+  };
+  mediaRecorder.onerror = async () => {
+    await cleanupRecordingMonitor();
+    resetRecordingFlags();
+    setState(STATE.ANNOYED);
+    setDialogue("録音に失敗したわ。", "录音失败。", { lockMs: 12000 });
+  };
+
+  mediaRecorder.start();
+  resetRecordingFlags();
+  recordingStartedAt = Date.now();
+  setState(STATE.LISTENING);
+  statusLine.textContent = trigger === "interrupt" ? "interrupt listening" : "listening";
+  setDialogue("話しなさい。", "我在听。", { live: true, lockMs: 12000 });
+  startVoiceMonitor();
+}
+
+function startVoiceMonitor() {
+  if (recordingTimer) {
+    clearInterval(recordingTimer);
+  }
+  recordingTimer = setInterval(() => {
+    if (!mediaRecorder || currentState !== STATE.LISTENING) {
+      return;
+    }
+    const now = Date.now();
+    const level = calculateLevel(recordingAnalyser);
+
+    if (level >= SPEECH_THRESHOLD) {
+      if (!hasDetectedSpeech) {
+        hasDetectedSpeech = true;
+        speechStartedAt = now;
+        setDialogue("話し続けなさい。", "继续说，我在听。", { live: true, lockMs: 12000 });
+      }
+      lastVoiceAt = now;
+      statusLine.textContent = `listening ${level.toFixed(3)}`;
+    }
+
+    if (!hasDetectedSpeech && now - recordingStartedAt >= MAX_WAIT_FOR_SPEECH_MS) {
+      void stopRecording("cancel", true);
+      if (canReplaceDialogue()) {
+        setDialogue("また聞こえなかったわ。", "这次没有等到你开口。", { lockMs: 8000 });
+      }
+      return;
+    }
+
+    if (hasDetectedSpeech) {
+      const speechMs = lastVoiceAt - speechStartedAt;
+      const silenceMs = now - lastVoiceAt;
+      if (speechMs >= MIN_SPEECH_MS && silenceMs >= SILENCE_HOLD_MS) {
+        void stopRecording("finalize", true);
+        return;
+      }
+    }
+
+    if (now - recordingStartedAt >= MAX_RECORDING_MS) {
+      void stopRecording(hasDetectedSpeech ? "finalize" : "cancel", true);
+    }
+  }, VAD_POLL_MS);
+}
+
+async function stopRecording(mode = "finalize", allowRestart = true) {
+  if (!mediaRecorder) {
+    return;
+  }
+  const recorder = mediaRecorder;
+  recorder.__stopMode = mode;
+  recorder.__allowRestart = allowRestart;
+  const now = Date.now();
+  recorder.__silenceMs = hasDetectedSpeech && lastVoiceAt ? now - lastVoiceAt : 0;
+  recorder.__speechMs = hasDetectedSpeech && speechStartedAt && lastVoiceAt ? Math.max(0, lastVoiceAt - speechStartedAt) : 0;
+  await cleanupRecordingMonitor();
+  resetRecordingFlags();
+  if (recorder.state !== "inactive") {
+    recorder.stop();
+  }
+}
+
+async function finishRecording(blob, allowRestart, silenceMs, speechMs) {
+  setState(STATE.DECIDING);
+  statusLine.textContent = "transcribing";
+
+  try {
+    const result = await transcribeAudio(blob);
+    const text = (result.text || "").trim();
+    petInput.value = text;
+
+    if (!text) {
+      setDialogue("うまく聞き取れなかったわ。", "这句我没听清。", { lockMs: 8000 });
+      setState(STATE.ANNOYED);
+      if (allowRestart) {
+        scheduleAutoListen(700);
+      }
+      return;
+    }
+
+    const decision = await decideTurn(text, silenceMs, speechMs, result.confidence ?? 0.8);
+    if (decision.action === "wait_more") {
+      pendingTranscript = pendingTranscript ? `${pendingTranscript} ${text}` : text;
+      setDialogue("まだ続きがあるんでしょう。", `继续说，我先记住这段：${pendingTranscript.slice(-24)}`, { live: true, lockMs: 12000 });
+      setState(STATE.IDLE);
+      if (allowRestart) {
+        scheduleAutoListen(250);
+      }
+      return;
+    }
+
+    if (decision.action === "interrupt" && currentState === STATE.SPEAKING) {
+      await interruptAISpeaking();
+      pendingTranscript = text;
+      return;
+    }
+
+    if (decision.action === "backchannel") {
+      setDialogue("うん。", "嗯。", { lockMs: 3500 });
+      setState(STATE.IDLE);
+      if (allowRestart) {
+        scheduleAutoListen(400);
+      }
+      return;
+    }
+
+    const fullText = pendingTranscript ? `${pendingTranscript} ${text}` : text;
+    pendingTranscript = "";
+    await sendMessage(fullText, "voice");
+  } catch (error) {
+    setState(STATE.ANNOYED);
+    statusLine.textContent = "asr failed";
+    setDialogue("音声経路に問題があるわ。", `语音转写失败：${error?.message || "unknown"}`, { lockMs: 15000 });
+    if (allowRestart) {
+      scheduleAutoListen(1000);
+    }
+  }
+}
+
+async function speakWithBrowserTts(segments, onDone) {
+  if (!("speechSynthesis" in window)) {
+    onDone?.();
+    return;
+  }
+  let index = 0;
+  const playNext = () => {
+    if (index >= segments.length) {
+      currentSpeechUtterance = null;
+      onDone?.();
+      return;
+    }
+    const segment = segments[index];
+    setDialogue(segment.ja_text, segment.zh_subtitle, { live: true, lockMs: DIALOGUE_LOCK_MS });
+    const utterance = new SpeechSynthesisUtterance(segment.ja_text);
+    utterance.lang = "ja-JP";
+    utterance.rate = 0.96;
+    utterance.pitch = 0.92;
+    utterance.onend = () => {
+      index += 1;
+      playNext();
+    };
+    utterance.onerror = () => {
+      index += 1;
+      playNext();
+    };
+    currentSpeechUtterance = utterance;
+    window.speechSynthesis.speak(utterance);
+  };
+  playNext();
+}
+
+function scheduleSegmentDisplay(segments, totalDurationMs) {
+  clearPlaybackTimers();
+  const totalWeight = segments.reduce((sum, segment) => sum + Math.max(segment.duration_ms || 0, 1), 0) || 1;
+  let elapsed = 0;
+  segments.forEach((segment) => {
+    currentSegmentTimers.push(
+      setTimeout(() => {
+        setDialogue(segment.ja_text, segment.zh_subtitle, { live: true, lockMs: DIALOGUE_LOCK_MS });
+      }, elapsed)
+    );
+    elapsed += Math.max(200, Math.round((segment.duration_ms / totalWeight) * totalDurationMs));
+  });
+}
+
+async function speakResponse(data) {
+  const segments = Array.isArray(data.segments) && data.segments.length > 0
+    ? data.segments
+    : [{ ja_text: data.ja_text, zh_subtitle: data.zh_subtitle, audio_url: data.audio_url || null, duration_ms: estimateSegmentDurationMs(data.ja_text, data.zh_subtitle) }];
+
+  await stopCurrentAudio();
+  setState(STATE.SPEAKING);
+  statusLine.textContent = `${data.voice?.engine || "browser"} / ${data.metrics?.total_ms || 0}ms`;
+  setDialogue(segments[0].ja_text, segments[0].zh_subtitle, { live: true, lockMs: DIALOGUE_LOCK_MS });
+  await startInterruptMonitor();
+
+  const audioUrl = data.audio_url || segments[0].audio_url || null;
+  if (!audioUrl) {
+    await speakWithBrowserTts(segments, () => {
+      void finishSpeech();
+    });
+    return;
+  }
+
+  currentAudio = new Audio(audioUrl);
+  currentAudio.onloadedmetadata = () => {
+    const totalDurationMs = Number.isFinite(currentAudio.duration) ? Math.max(segments.length * 900, currentAudio.duration * 1000) : segments.reduce((sum, segment) => sum + segment.duration_ms, 0);
+    scheduleSegmentDisplay(segments, totalDurationMs);
+  };
+  currentAudio.onplay = () => {
+    if (!currentSegmentTimers.length) {
+      const fallbackTotal = segments.reduce((sum, segment) => sum + segment.duration_ms, 0);
+      scheduleSegmentDisplay(segments, fallbackTotal);
+    }
+  };
+  currentAudio.onended = () => {
+    zhLine.textContent = segments[segments.length - 1].zh_subtitle;
+    void finishSpeech();
+  };
+  currentAudio.onerror = async () => {
+    currentAudio = null;
+    await speakWithBrowserTts(segments, () => {
+      void finishSpeech();
+    });
+  };
+  currentAudio.play().catch(async () => {
+    currentAudio = null;
+    await speakWithBrowserTts(segments, () => {
+      void finishSpeech();
+    });
+  });
+}
+
+async function interruptAISpeaking() {
+  if (currentState !== STATE.SPEAKING) {
+    return;
+  }
+  setState(STATE.INTERRUPTING);
+  await stopCurrentAudio();
+  setDialogue("止まったわ。続けて言いなさい。", "我停下了，你继续说。", { lockMs: 12000 });
+  await beginListening("interrupt");
+}
+
+async function sendMessage(text, source = "text") {
+  if (!window.companionDesktop?.chat || isChatting) {
+    return;
+  }
+  isChatting = true;
+  clearAutoListenTimer();
+  await stopCurrentAudio();
+  setState(STATE.THINKING);
+  statusLine.textContent = "thinking";
+  setDialogue("考えているわ。少し待ちなさい。", "我在思考，稍等。", { live: true, lockMs: 15000 });
+
+  try {
+    const result = await window.companionDesktop.chat({ text, source });
+    if (!result.ok) {
+      setState(STATE.ANNOYED);
+      statusLine.textContent = result.reason || `request failed (${result.status || "?"})`;
+      setDialogue("設定か通信に問題があるわ。", result.data?.detail || "后端请求失败。", { lockMs: 15000 });
+      scheduleAutoListen(900);
+      return;
+    }
+    await speakResponse(result.data);
+  } finally {
+    isChatting = false;
+  }
+}
+
+async function refreshCheckin() {
+  if (!window.companionDesktop?.checkin) {
+    return;
+  }
+  const now = Date.now();
+  if (now - lastCheckinAt < 55000 || now - lastConversationAt < 60000 || currentState === STATE.SPEAKING || currentState === STATE.LISTENING) {
+    return;
+  }
+  lastCheckinAt = now;
+  const result = await window.companionDesktop.checkin();
+  if (!result.ok || !result.data?.should_prompt) {
+    return;
+  }
+  setDialogue(result.data.ja_text, result.data.zh_subtitle, { lockMs: 25000 });
+}
+
+async function refreshHealth() {
+  if (!window.companionDesktop?.health) {
+    statusLine.textContent = "desktop bridge missing";
+    return;
+  }
+  const result = await window.companionDesktop.health();
+  if (!result.ok) {
+    statusLine.textContent = `backend offline: ${result.reason}`;
+    setState(STATE.ANNOYED);
+    if (canReplaceDialogue()) {
+      setDialogue("バックエンドが起動していないわ。", "后端还没启动。", { lockMs: 12000 });
+    }
+    return;
+  }
+
+  const secret = result.data.secret || {};
+  const voice = result.data.voice || {};
+  const voiceBackend = voice.backend || {};
+  const asr = result.data.asr || {};
+  const hasKey = Boolean(secret.has_env_key || secret.has_saved_key);
+  const voiceEngine = voiceBackend.engine || voice.provider || "browser";
+  const fallbackUsed = Boolean(voiceBackend.fallback_used);
+  statusLine.textContent = `${voiceEngine}${fallbackUsed ? " fallback" : ""} / asr ${asr.provider || "unknown"}`;
+
+  if (!initializedPrompt) {
+    if (!hasKey) {
+      setDialogue("DeepSeek key を設定しなさい。", "先设置 DeepSeek key。", { lockMs: 20000 });
+    } else if (fallbackUsed) {
+      setDialogue("音声クローンが未就緒よ。", "语音克隆还没就绪。", { lockMs: 20000 });
+    } else {
+      setDialogue("直接話しなさい。", "现在可以直接说话了。", { lockMs: 20000 });
+    }
+    initializedPrompt = true;
+  }
+
+  if (hasKey && autoListenEnabled && currentState === STATE.IDLE) {
+    scheduleAutoListen(600);
+    await refreshCheckin();
+  }
+}
+
+async function toggleAutoListen() {
+  autoListenEnabled = !autoListenEnabled;
+  setMicVisual();
+  if (!autoListenEnabled) {
+    clearAutoListenTimer();
+    if (mediaRecorder) {
+      await stopRecording("cancel", false);
+    }
+    await stopCurrentAudio();
+    setDialogue("常时监听已关闭。", "常驻监听已关闭。", { lockMs: 10000 });
+    setState(STATE.IDLE);
+    return;
+  }
+  setDialogue("常时监听已开启。", "常驻监听已开启。", { lockMs: 10000 });
+  scheduleAutoListen(300);
+}
+
+composer.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const text = petInput.value.trim();
+  if (!text) {
+    return;
+  }
+  petInput.value = "";
+  pendingTranscript = "";
+  void sendMessage(text, "text");
+});
+
+micButton.addEventListener("click", () => {
+  void toggleAutoListen();
+});
+
+openWorkbench.addEventListener("click", async () => {
+  await window.companionDesktop.openWorkbench();
+});
+
+window.addEventListener("beforeunload", async () => {
+  clearAutoListenTimer();
+  await stopCurrentAudio();
+  await cleanupRecordingMonitor();
+  await cleanupInterruptMonitor();
+  await releaseMicStream();
+});
+
+setMicVisual();
+refreshHealth();
+setInterval(refreshHealth, 15000);

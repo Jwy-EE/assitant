@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import io
 import os
@@ -22,25 +22,24 @@ class AsrService:
         self._whisper_model = None
 
     def status(self) -> dict[str, Any]:
-        provider = os.environ.get("ASSISTANT_ASR_PROVIDER", "google").strip().lower() or "google"
+        provider = os.environ.get("ASSISTANT_ASR_PROVIDER", "faster_whisper").strip().lower() or "faster_whisper"
         return {
             "provider": provider,
             "language": "zh-CN",
             "input_format": "audio/wav",
+            "model": os.environ.get("ASSISTANT_ASR_MODEL", "base"),
+            "device": os.environ.get("ASSISTANT_ASR_DEVICE", "auto"),
         }
 
     def _get_provider(self) -> str:
-        return os.environ.get("ASSISTANT_ASR_PROVIDER", "google").strip().lower() or "google"
+        return os.environ.get("ASSISTANT_ASR_PROVIDER", "faster_whisper").strip().lower() or "faster_whisper"
 
     def transcribe_wav(self, audio_bytes: bytes, language: str = "zh-CN") -> AsrResult:
         provider = self._get_provider()
         t0 = time.perf_counter()
-
-        if provider == "faster_whisper":
-            return self._transcribe_faster_whisper(audio_bytes, language, t0)
-
-        # fallback: google speech recognition
-        return self._transcribe_google(audio_bytes, language, t0)
+        if provider == "google":
+            return self._transcribe_google(audio_bytes, language, t0)
+        return self._transcribe_faster_whisper(audio_bytes, language, t0)
 
     def _transcribe_google(self, audio_bytes: bytes, language: str, t0: float) -> AsrResult:
         import speech_recognition as sr
@@ -52,24 +51,22 @@ class AsrService:
             text = recognizer.recognize_google(audio, language=language)
         except sr.UnknownValueError:
             elapsed = (time.perf_counter() - t0) * 1000
-            return AsrResult(ok=False, text="", engine="google", confidence=0.0, duration_ms=elapsed, reason="Could not recognize speech.")
+            return AsrResult(False, "", "google", 0.0, elapsed, "Could not recognize speech.")
         except sr.RequestError as exc:
             elapsed = (time.perf_counter() - t0) * 1000
-            return AsrResult(ok=False, text="", engine="google", confidence=0.0, duration_ms=elapsed, reason=f"ASR request failed: {exc}")
+            return AsrResult(False, "", "google", 0.0, elapsed, f"ASR request failed: {exc}")
         except Exception as exc:
             elapsed = (time.perf_counter() - t0) * 1000
-            return AsrResult(ok=False, text="", engine="google", confidence=0.0, duration_ms=elapsed, reason=str(exc))
+            return AsrResult(False, "", "google", 0.0, elapsed, str(exc))
 
         elapsed = (time.perf_counter() - t0) * 1000
-        # Google doesn't expose confidence, use a reasonable default
-        return AsrResult(ok=True, text=text.strip(), engine="google", confidence=0.8, duration_ms=round(elapsed, 1))
+        return AsrResult(True, text.strip(), "google", 0.8, round(elapsed, 1))
 
     def _transcribe_faster_whisper(self, audio_bytes: bytes, language: str, t0: float) -> AsrResult:
         try:
             from faster_whisper import WhisperModel
         except ImportError:
-            elapsed = (time.perf_counter() - t0) * 1000
-            return AsrResult(ok=False, text="", engine="faster_whisper", confidence=0.0, duration_ms=elapsed, reason="faster-whisper not installed. Run: pip install faster-whisper")
+            return self._transcribe_google(audio_bytes, language, t0)
 
         model_name = os.environ.get("ASSISTANT_ASR_MODEL", "base").strip() or "base"
         device = os.environ.get("ASSISTANT_ASR_DEVICE", "auto").strip() or "auto"
@@ -86,7 +83,6 @@ class AsrService:
                     compute_type=compute if device == "cuda" else "default",
                 )
 
-            # Write audio bytes to a temporary file for faster-whisper
             import tempfile
 
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -102,7 +98,6 @@ class AsrService:
                 )
                 text = " ".join(seg.text for seg in segments).strip()
                 confidence = info.average_log_prob if info is not None else 0.0
-                # Normalize confidence to 0-1 range (whisper avg_log_prob is typically -1 to 0)
                 confidence = max(0.0, min(1.0, (confidence + 1.0) / 2.0))
             finally:
                 try:
@@ -111,18 +106,10 @@ class AsrService:
                     pass
 
             elapsed = (time.perf_counter() - t0) * 1000
-            return AsrResult(
-                ok=bool(text),
-                text=text or "",
-                engine="faster_whisper",
-                confidence=round(confidence, 4),
-                duration_ms=round(elapsed, 1),
-                reason=None if text else "No speech detected.",
-            )
-
+            return AsrResult(bool(text), text or "", "faster_whisper", round(confidence, 4), round(elapsed, 1), None if text else "No speech detected.")
         except Exception as exc:
             elapsed = (time.perf_counter() - t0) * 1000
-            return AsrResult(ok=False, text="", engine="faster_whisper", confidence=0.0, duration_ms=elapsed, reason=str(exc))
+            return AsrResult(False, "", "faster_whisper", 0.0, elapsed, str(exc))
 
     @staticmethod
     def _has_cuda() -> bool:
